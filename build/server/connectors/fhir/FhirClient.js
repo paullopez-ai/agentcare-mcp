@@ -325,4 +325,197 @@ export class FhirClient {
             return `${name}: ${value} ${unit} (${date})`;
         });
     }
+    // DocumentReference - Clinical Notes
+    async getPatientDocuments(args) {
+        const params = new URLSearchParams();
+        params.append('patient', args.patientId);
+        if (args.type)
+            params.append('type', args.type);
+        if (args.category)
+            params.append('category', args.category);
+        if (args.status)
+            params.append('status', args.status);
+        if (args.dateFrom)
+            params.append('date', `ge${args.dateFrom}`);
+        if (args.dateTo)
+            params.append('date', `le${args.dateTo}`);
+        const response = await this.client.get(`/DocumentReference?${params}`);
+        return this.formatResponse(`fhir://Patient/${args.patientId}/documents`, response.data);
+    }
+    async getDocumentContent(args) {
+        const response = await this.client.get(`/DocumentReference/${args.documentId}`);
+        const document = response.data;
+        // If there's a Binary attachment, fetch it
+        if (document.content?.[0]?.attachment?.url) {
+            const binaryUrl = document.content[0].attachment.url;
+            // Handle relative vs absolute URLs
+            if (binaryUrl.startsWith('Binary/')) {
+                const binaryResponse = await this.client.get(`/${binaryUrl}`);
+                return this.formatResponse(`fhir://DocumentReference/${args.documentId}/content`, {
+                    document,
+                    binaryContent: binaryResponse.data
+                });
+            }
+        }
+        return this.formatResponse(`fhir://DocumentReference/${args.documentId}`, document);
+    }
+    // DiagnosticReport - Lab/Imaging Reports
+    async getDiagnosticReports(args) {
+        const params = new URLSearchParams();
+        params.append('patient', args.patientId);
+        if (args.category)
+            params.append('category', args.category);
+        if (args.code)
+            params.append('code', args.code);
+        if (args.status)
+            params.append('status', args.status);
+        if (args.dateFrom)
+            params.append('date', `ge${args.dateFrom}`);
+        if (args.dateTo)
+            params.append('date', `le${args.dateTo}`);
+        const response = await this.client.get(`/DiagnosticReport?${params}`);
+        return this.formatResponse(`fhir://Patient/${args.patientId}/diagnostic-reports`, response.data);
+    }
+    // Coverage - Insurance Information
+    async getPatientCoverage(args) {
+        const params = new URLSearchParams();
+        params.append('patient', args.patientId);
+        if (args.status)
+            params.append('status', args.status);
+        const response = await this.client.get(`/Coverage?${params}`);
+        return this.formatResponse(`fhir://Patient/${args.patientId}/coverage`, response.data);
+    }
+    // Write Operations
+    async createObservation(args) {
+        const observation = {
+            resourceType: "Observation",
+            status: args.status || "final",
+            category: [{
+                    coding: [{
+                            system: "http://terminology.hl7.org/CodeSystem/observation-category",
+                            code: args.category || "vital-signs",
+                            display: args.category || "Vital Signs"
+                        }]
+                }],
+            code: {
+                coding: [{
+                        system: "http://loinc.org",
+                        code: args.code,
+                        display: args.codeDisplay
+                    }]
+            },
+            subject: {
+                reference: `Patient/${args.patientId}`
+            },
+            effectiveDateTime: args.effectiveDateTime || new Date().toISOString(),
+            valueQuantity: {
+                value: args.value,
+                unit: args.unit,
+                system: "http://unitsofmeasure.org",
+                code: args.unit
+            }
+        };
+        const response = await this.client.post('/Observation', observation);
+        return this.formatResponse(`fhir://Observation/created`, {
+            message: "Observation created successfully",
+            resourceId: response.data.id,
+            resource: response.data
+        });
+    }
+    async createAllergy(args) {
+        const allergyIntolerance = {
+            resourceType: "AllergyIntolerance",
+            clinicalStatus: {
+                coding: [{
+                        system: "http://terminology.hl7.org/CodeSystem/allergyintolerance-clinical",
+                        code: "active",
+                        display: "Active"
+                    }]
+            },
+            verificationStatus: {
+                coding: [{
+                        system: "http://terminology.hl7.org/CodeSystem/allergyintolerance-verification",
+                        code: "confirmed",
+                        display: "Confirmed"
+                    }]
+            },
+            type: args.type || "allergy",
+            category: [args.category],
+            criticality: args.criticality,
+            code: {
+                coding: [{
+                        system: args.allergenSystem || "http://snomed.info/sct",
+                        code: args.allergenCode,
+                        display: args.allergenDisplay
+                    }]
+            },
+            patient: {
+                reference: `Patient/${args.patientId}`
+            },
+            recordedDate: new Date().toISOString(),
+            ...(args.reactionDescription && {
+                reaction: [{
+                        description: args.reactionDescription,
+                        severity: args.reactionSeverity
+                    }]
+            })
+        };
+        const response = await this.client.post('/AllergyIntolerance', allergyIntolerance);
+        return this.formatResponse(`fhir://AllergyIntolerance/created`, {
+            message: "Allergy created successfully",
+            resourceId: response.data.id,
+            resource: response.data
+        });
+    }
+    async createCondition(args) {
+        const condition = {
+            resourceType: "Condition",
+            clinicalStatus: {
+                coding: [{
+                        system: "http://terminology.hl7.org/CodeSystem/condition-clinical",
+                        code: args.clinicalStatus || "active",
+                        display: args.clinicalStatus || "Active"
+                    }]
+            },
+            verificationStatus: {
+                coding: [{
+                        system: "http://terminology.hl7.org/CodeSystem/condition-ver-status",
+                        code: args.verificationStatus || "confirmed",
+                        display: args.verificationStatus || "Confirmed"
+                    }]
+            },
+            ...(args.severity && {
+                severity: {
+                    coding: [{
+                            system: "http://snomed.info/sct",
+                            code: args.severity === "mild" ? "255604002" : args.severity === "moderate" ? "6736007" : "24484000",
+                            display: args.severity.charAt(0).toUpperCase() + args.severity.slice(1)
+                        }]
+                }
+            }),
+            code: {
+                coding: [{
+                        system: args.codeSystem || "http://snomed.info/sct",
+                        code: args.code,
+                        display: args.codeDisplay
+                    }]
+            },
+            subject: {
+                reference: `Patient/${args.patientId}`
+            },
+            onsetDateTime: args.onsetDateTime,
+            recordedDate: new Date().toISOString(),
+            ...(args.note && {
+                note: [{
+                        text: args.note
+                    }]
+            })
+        };
+        const response = await this.client.post('/Condition', condition);
+        return this.formatResponse(`fhir://Condition/created`, {
+            message: "Condition created successfully",
+            resourceId: response.data.id,
+            resource: response.data
+        });
+    }
 }

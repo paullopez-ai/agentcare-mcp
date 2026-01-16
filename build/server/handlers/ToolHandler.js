@@ -27,8 +27,15 @@ export class ToolHandler {
         tools: TOOL_DEFINITIONS
     });
     handleCall = async (request) => {
-        if (request.params?.name != "find_patient" && request.params?.name != "get-drug"
-            && request.params?.name != "search-trials" && request.params?.name != "search-pubmed") {
+        // Tools that don't require patientId
+        const noPatientIdTools = [
+            "find_patient",
+            "get-drug-info",
+            "search-trials",
+            "search-pubmed",
+            "get_document_content" // Uses documentId instead
+        ];
+        if (!noPatientIdTools.includes(request.params?.name)) {
             if (!request.params?.arguments?.patientId) {
                 throw new McpError(ErrorCode.InvalidParams, "patientId is required");
             }
@@ -76,6 +83,24 @@ export class ToolHandler {
                     return await this.trialsApi.getTrials(request.params.arguments, this.cache);
                 case "get-drug-info":
                     return await this.fdaApi.getDrug(request.params.arguments, this.cache);
+                // DocumentReference - Clinical Notes
+                case "get_patient_documents":
+                    return await this.fhirClient.getPatientDocuments(request.params.arguments);
+                case "get_document_content":
+                    return await this.fhirClient.getDocumentContent(request.params.arguments);
+                // DiagnosticReport - Lab/Imaging Reports
+                case "get_diagnostic_reports":
+                    return await this.fhirClient.getDiagnosticReports(request.params.arguments);
+                // Coverage - Insurance
+                case "get_patient_coverage":
+                    return await this.fhirClient.getPatientCoverage(request.params.arguments);
+                // Write Operations
+                case "create_observation":
+                    return await this.fhirClient.createObservation(request.params.arguments);
+                case "create_allergy":
+                    return await this.fhirClient.createAllergy(request.params.arguments);
+                case "create_condition":
+                    return await this.fhirClient.createCondition(request.params.arguments);
                 default:
                     throw new McpError(ErrorCode.MethodNotFound, `Unknown tool: ${request.params.name}`);
             }
